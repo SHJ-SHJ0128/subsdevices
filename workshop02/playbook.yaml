@@ -1,0 +1,113 @@
+---
+- name: Install and configure Code Server
+  hosts: codeserver
+  become: true
+
+  vars:
+    code_server_version: "4.130.0"
+    code_server_archive: "code-server-{{ code_server_version }}-linux-amd64"
+    code_server_url: "https://github.com/coder/code-server/releases/download/v{{ code_server_version }}/{{ code_server_archive }}.tar.gz"
+    code_server_install_dir: "/usr/local/lib/code-server-{{ code_server_version }}"
+
+  tasks:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command:
+        cmd: cloud-init status --wait
+      changed_when: false
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - nginx
+          - tar
+        state: present
+
+    - name: Create Code Server directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ code_server_install_dir }}"
+        - /var/lib/code-server
+
+    - name: Download Code Server
+      ansible.builtin.get_url:
+        url: "{{ code_server_url }}"
+        dest: "/tmp/{{ code_server_archive }}.tar.gz"
+        mode: "0644"
+
+    - name: Extract Code Server
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ code_server_archive }}.tar.gz"
+        dest: "{{ code_server_install_dir }}"
+        remote_src: true
+        extra_opts:
+          - --strip-components=1
+        creates: "{{ code_server_install_dir }}/bin/code-server"
+
+    - name: Create Code Server executable link
+      ansible.builtin.file:
+        src: "{{ code_server_install_dir }}/bin/code-server"
+        dest: /usr/bin/code-server
+        state: link
+        force: true
+
+    - name: Install Code Server systemd service
+      ansible.builtin.template:
+        src: code-server.service.j2
+        dest: /lib/systemd/system/code-server.service
+        mode: "0644"
+      notify: Restart Code Server
+
+    - name: Install Nginx configuration
+      ansible.builtin.template:
+        src: code-server.conf.j2
+        dest: /etc/nginx/sites-available/code-server.conf
+        mode: "0644"
+      notify: Restart Nginx
+
+    - name: Enable Code Server Nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/code-server.conf
+        dest: /etc/nginx/sites-enabled/default
+        state: link
+        force: true
+      notify: Restart Nginx
+
+    - name: Validate Nginx configuration
+      ansible.builtin.command:
+        cmd: nginx -t
+      changed_when: false
+
+    - name: Enable and start Code Server
+      ansible.builtin.systemd:
+        name: code-server
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Enable and start Nginx
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Restart Code Server
+      ansible.builtin.systemd:
+        name: code-server
+        state: restarted
+        daemon_reload: true
+
+    - name: Restart Nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted

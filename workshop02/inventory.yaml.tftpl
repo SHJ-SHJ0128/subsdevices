@@ -1,0 +1,12 @@
+all:
+  vars:
+    ansible_connection: ssh
+    ansible_user: root
+    ansible_ssh_private_key_file: ${ssh_private_key}
+    ansible_python_interpreter: /usr/bin/python3
+
+  hosts:
+    codeserver:
+      ansible_host: ${codeserver_ip}
+      codeserver_domain: ${codeserver_domain}
+      codeserver_password: ${codeserver_password}
