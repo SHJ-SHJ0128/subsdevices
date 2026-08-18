@@ -1,0 +1,2 @@
+# subsdevices
+DevSecOps workshop exercises
